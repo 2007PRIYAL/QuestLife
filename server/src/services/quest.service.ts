@@ -149,7 +149,7 @@ export const updateQuest = async (
   }
 
   values.push(questId, userId);
-  console.log('QUEST REWARD DEBUG:', reward);
+  console.log('QUEST REWARD DEBUG:', REWARDS);
 
   const result = await query(
     `UPDATE quests
