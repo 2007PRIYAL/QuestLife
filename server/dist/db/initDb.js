@@ -17,10 +17,17 @@ async function ensureDatabaseAndSchema() {
     // Parse target DB name from DATABASE_URL
     const match = dbUrl.match(/\/([^/?]+)(\?|$)/);
     const targetDb = match ? match[1] : 'life_rpg';
+    const isProduction = process.env.NODE_ENV === 'production' ||
+        dbUrl.includes('sslmode=require') ||
+        dbUrl.includes('render.com') ||
+        dbUrl.includes('neon.tech') ||
+        dbUrl.includes('supabase.co') ||
+        (!dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1'));
+    const sslConfig = isProduction ? { rejectUnauthorized: false } : undefined;
     // 1. Try to connect to postgres admin database to check/create target database
     try {
         const adminUrl = dbUrl.replace(`/${targetDb}`, '/postgres');
-        const adminClient = new pg_1.Client({ connectionString: adminUrl });
+        const adminClient = new pg_1.Client({ connectionString: adminUrl, ssl: sslConfig });
         await adminClient.connect();
         try {
             const checkDb = await adminClient.query('SELECT 1 FROM pg_database WHERE datname = $1', [targetDb]);
@@ -39,7 +46,7 @@ async function ensureDatabaseAndSchema() {
         console.log(`[Database] Admin check note: ${err.message || err}`);
     }
     // 2. Connect to the target DB and verify/create schema
-    const targetPool = new pg_1.Pool({ connectionString: dbUrl });
+    const targetPool = new pg_1.Pool({ connectionString: dbUrl, ssl: sslConfig });
     try {
         await targetPool.query('SELECT 1');
         const tableCheck = await targetPool.query(`
