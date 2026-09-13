@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteQuest = exports.updateQuest = exports.getQuestById = exports.getQuests = exports.createQuest = void 0;
+exports.deleteQuest = exports.updateQuest = exports.completeQuest = exports.getQuestById = exports.getQuests = exports.createQuest = void 0;
 const pool_1 = require("../db/pool");
+const gamification_service_1 = require("./gamification.service");
 const REWARDS = {
     MAIN: {
         base_xp: 100,
@@ -21,6 +22,10 @@ const REWARDS = {
 };
 const createQuest = async (userId, input) => {
     const reward = REWARDS[input.type];
+    console.log('QUEST DEBUG:', {
+        type: input.type,
+        reward,
+    });
     const result = await (0, pool_1.query)(`INSERT INTO quests (
       user_id,
       title,
@@ -50,17 +55,33 @@ const createQuest = async (userId, input) => {
 };
 exports.createQuest = createQuest;
 const getQuests = async (userId) => {
-    const result = await (0, pool_1.query)(`SELECT *
-     FROM quests
-     WHERE user_id = $1
-     ORDER BY map_index ASC NULLS LAST, created_at ASC`, [userId]);
+    const result = await (0, pool_1.query)(`SELECT
+       q.*,
+       EXISTS (
+         SELECT 1
+         FROM quest_completions qc
+         WHERE qc.quest_id = q.id
+           AND qc.completion_date = (NOW() AT TIME ZONE COALESCE(p.timezone, 'UTC'))::DATE
+       ) AS completed_today
+     FROM quests q
+     LEFT JOIN profiles p ON p.user_id = q.user_id
+     WHERE q.user_id = $1
+     ORDER BY q.map_index ASC NULLS LAST, q.created_at ASC`, [userId]);
     return result.rows;
 };
 exports.getQuests = getQuests;
 const getQuestById = async (userId, questId) => {
-    const result = await (0, pool_1.query)(`SELECT *
-     FROM quests
-     WHERE id = $1 AND user_id = $2
+    const result = await (0, pool_1.query)(`SELECT
+       q.*,
+       EXISTS (
+         SELECT 1
+         FROM quest_completions qc
+         WHERE qc.quest_id = q.id
+           AND qc.completion_date = (NOW() AT TIME ZONE COALESCE(p.timezone, 'UTC'))::DATE
+       ) AS completed_today
+     FROM quests q
+     LEFT JOIN profiles p ON p.user_id = q.user_id
+     WHERE q.id = $1 AND q.user_id = $2
      LIMIT 1`, [questId, userId]);
     if (result.rows.length === 0) {
         throw new Error('Quest not found');
@@ -68,6 +89,132 @@ const getQuestById = async (userId, questId) => {
     return result.rows[0];
 };
 exports.getQuestById = getQuestById;
+const ATTR_COLUMN_MAP = {
+    HEALTH: 'health',
+    STRENGTH: 'strength',
+    INTELLIGENCE: 'intelligence',
+    WISDOM: 'wisdom',
+    AGILITY: 'agility',
+};
+const completeQuest = async (userId, questId) => {
+    // 1. Get the quest
+    const questResult = await (0, pool_1.query)(`SELECT * FROM quests WHERE id = $1 AND user_id = $2 LIMIT 1`, [questId, userId]);
+    if (questResult.rows.length === 0) {
+        const error = new Error('Quest not found');
+        error.statusCode = 404;
+        throw error;
+    }
+    const quest = questResult.rows[0];
+    // 2. Get profile and streak
+    const profileResult = await (0, pool_1.query)(`SELECT
+       p.*,
+       s.current_streak,
+       s.longest_streak,
+       s.last_completion_date
+     FROM profiles p
+     JOIN streaks s ON s.user_id = p.user_id
+     WHERE p.user_id = $1
+     LIMIT 1`, [userId]);
+    if (profileResult.rows.length === 0) {
+        const error = new Error('Profile not found');
+        error.statusCode = 404;
+        throw error;
+    }
+    const profile = profileResult.rows[0];
+    const userTimezone = profile.timezone || 'UTC';
+    const today = (0, gamification_service_1.getDateInTimezone)(userTimezone);
+    // 3. Check if already completed today
+    const completionCheck = await (0, pool_1.query)(`SELECT 1 FROM quest_completions WHERE quest_id = $1 AND completion_date = $2 LIMIT 1`, [questId, today]);
+    if (completionCheck.rows.length > 0) {
+        const error = new Error('This quest has already been completed today.');
+        error.statusCode = 400;
+        throw error;
+    }
+    // 4. Calculate rewards, carry-over level progression, and stats
+    const xpAwarded = Number(quest.base_xp);
+    const coinsAwarded = Number(quest.base_coins);
+    const attributePointsAwarded = Number(quest.attribute_points);
+    const attributeCategory = quest.category;
+    const { level: newLevel, currentXp: newCurrentXp, leveledUp } = (0, gamification_service_1.calculateLevelAndCarryOverXp)(Number(profile.level), Number(profile.current_xp), xpAwarded);
+    const newCoins = Number(profile.coins) + coinsAwarded;
+    const newTotalQuests = Number(profile.total_quests_completed) + 1;
+    const attrCol = ATTR_COLUMN_MAP[attributeCategory] || 'health';
+    const newAttrValue = Number(profile[attrCol] ?? 10) + attributePointsAwarded;
+    // 5. Calculate updated streak
+    const streakUpdate = (0, gamification_service_1.calculateStreak)(profile.last_completion_date, Number(profile.current_streak), Number(profile.longest_streak), today);
+    // 6. Execute atomic transaction
+    const client = await pool_1.pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query(`INSERT INTO quest_completions (
+         quest_id,
+         user_id,
+         completion_date,
+         xp_awarded,
+         coins_awarded,
+         attribute_points_awarded,
+         attribute_category
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
+            questId,
+            userId,
+            today,
+            xpAwarded,
+            coinsAwarded,
+            attributePointsAwarded,
+            attributeCategory,
+        ]);
+        await client.query(`UPDATE profiles
+       SET
+         level = $1,
+         current_xp = $2,
+         coins = $3,
+         ${attrCol} = $4,
+         total_quests_completed = $5,
+         updated_at = NOW()
+       WHERE user_id = $6`, [
+            newLevel,
+            newCurrentXp,
+            newCoins,
+            newAttrValue,
+            newTotalQuests,
+            userId,
+        ]);
+        await client.query(`UPDATE streaks
+       SET
+         current_streak = $1,
+         longest_streak = $2,
+         last_completion_date = $3,
+         updated_at = NOW()
+       WHERE user_id = $4`, [
+            streakUpdate.currentStreak,
+            streakUpdate.longestStreak,
+            today,
+            userId,
+        ]);
+        await client.query('COMMIT');
+    }
+    catch (txError) {
+        await client.query('ROLLBACK');
+        throw txError;
+    }
+    finally {
+        client.release();
+    }
+    return {
+        quest: {
+            ...quest,
+            completed_today: true,
+        },
+        xp_awarded: xpAwarded,
+        coins_awarded: coinsAwarded,
+        attribute_points_awarded: attributePointsAwarded,
+        attribute_category: attributeCategory,
+        leveled_up: leveledUp,
+        new_level: newLevel,
+        current_streak: streakUpdate.currentStreak,
+    };
+};
+exports.completeQuest = completeQuest;
 const updateQuest = async (userId, questId, input) => {
     const fields = [];
     const values = [];
@@ -106,6 +253,7 @@ const updateQuest = async (userId, questId, input) => {
         return (0, exports.getQuestById)(userId, questId);
     }
     values.push(questId, userId);
+    console.log('QUEST REWARD DEBUG:', REWARDS);
     const result = await (0, pool_1.query)(`UPDATE quests
      SET ${fields.join(', ')}, updated_at = NOW()
      WHERE id = $${values.length - 1}

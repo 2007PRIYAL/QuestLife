@@ -11,6 +11,7 @@ import {
   getQuestById,
   updateQuest,
   deleteQuest,
+  completeQuest,
 } from '../services/quest.service';
 
 export const create = async (
@@ -184,3 +185,49 @@ export const remove = async (
     next(error);
   }
 };
+
+export const complete = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const questId = String(req.params.id);
+
+    if (!questId || questId === 'undefined') {
+      res.status(400).json({
+        success: false,
+        message: 'Quest ID is required',
+      });
+      return;
+    }
+
+    const result = await completeQuest(
+      req.user.userId,
+      questId,
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    if (error.statusCode) {
+      res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+    next(error);
+  }
+};
+

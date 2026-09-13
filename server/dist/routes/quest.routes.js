@@ -9,4 +9,5 @@ router.get('/', auth_middleware_1.authenticate, quest_controller_1.list);
 router.get('/:id', auth_middleware_1.authenticate, quest_controller_1.getOne);
 router.patch('/:id', auth_middleware_1.authenticate, quest_controller_1.update);
 router.delete('/:id', auth_middleware_1.authenticate, quest_controller_1.remove);
+router.post('/:id/complete', auth_middleware_1.authenticate, quest_controller_1.complete);
 exports.default = router;

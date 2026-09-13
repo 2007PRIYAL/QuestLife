@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #050b14;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+}
+
+* {
+  image-rendering: pixelated;
+}
+
+/* The mobile "device frame" every screen renders inside of */
+.app-shell {
+  position: relative;
+  max-width: 430px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: #081220;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pixel-art style border: a hard black outline plus a colored outer ring,
+   evoking 16-bit UI panels without needing bitmap border-image assets. */
+.pixel-border {
+  border: 3px solid #000;
+  box-shadow:
+    0 0 0 2px #4da6ff,
+    0 0 0 4px #000;
+  border-radius: 4px;
+}
+
+.pixel-border-gold {
+  border: 3px solid #000;
+  box-shadow:
+    0 0 0 2px #ffd93d,
+    0 0 0 4px #000;
+  border-radius: 4px;
+}
+
+.pixel-corners {
+  clip-path: polygon(
+    0 6px,
+    6px 0,
+    calc(100% - 6px) 0,
+    100% 6px,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    0 calc(100% - 6px)
+  );
+}
+
+.font-pixel {
+  font-family: 'Press Start 2P', cursive;
+  letter-spacing: 0.5px;
+}
+
+.text-shadow-pixel {
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.starfield {
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 80% 10%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 60% 40%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 30% 70%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 90% 80%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 45% 90%, rgba(255, 255, 255, 0.5), transparent);
+  background-repeat: repeat;
+  background-size: 300px 300px;
+}
+
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.12) 0px,
+    rgba(0, 0, 0, 0.12) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* Visible focus rings for keyboard navigation (accessibility requirement) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #ffd93d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #081220;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border: 1px solid #000;
+}

@@ -1,5 +1,10 @@
 import { query } from '../db/pool';
 import { ProfileUpdateInput } from '../schemas/profile.schema';
+import {
+  getDateInTimezone,
+  getYesterdayDate,
+  normalizeDateString,
+} from './gamification.service';
 
 export const getProfile = async (userId: string) => {
   const result = await query(
@@ -31,7 +36,18 @@ export const getProfile = async (userId: string) => {
     throw new Error('Profile not found');
   }
 
-  return result.rows[0];
+  const row = result.rows[0];
+  const userTimezone = row.timezone || 'UTC';
+  const today = getDateInTimezone(userTimezone);
+  const yesterday = getYesterdayDate(today);
+  const lastDate = normalizeDateString(row.last_completion_date);
+
+  if (lastDate && lastDate !== today && lastDate !== yesterday && row.current_streak > 0) {
+    row.current_streak = 0;
+    query('UPDATE streaks SET current_streak = 0, updated_at = NOW() WHERE user_id = $1', [userId]).catch(() => {});
+  }
+
+  return row;
 };
 
 export const updateProfile = async (

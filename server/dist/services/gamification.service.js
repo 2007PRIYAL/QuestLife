@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getXpProgress = exports.calculateLevelFromXp = exports.xpRequiredForLevel = exports.getQuestReward = void 0;
+exports.calculateStreak = exports.calculateLevelAndCarryOverXp = exports.normalizeDateString = exports.getYesterdayDate = exports.getDateInTimezone = exports.getXpProgress = exports.calculateLevelFromXp = exports.xpRequiredForLevel = exports.getQuestReward = void 0;
 const REWARDS = {
     MAIN: {
         xp: 100,
@@ -70,3 +70,100 @@ const getXpProgress = (level, currentXp) => {
     };
 };
 exports.getXpProgress = getXpProgress;
+/**
+ * Returns YYYY-MM-DD in the given IANA timezone.
+ */
+const getDateInTimezone = (timezone = 'UTC', date = new Date()) => {
+    try {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        });
+        return formatter.format(date);
+    }
+    catch {
+        return date.toISOString().slice(0, 10);
+    }
+};
+exports.getDateInTimezone = getDateInTimezone;
+/**
+ * Returns previous calendar day (YYYY-MM-DD) given a YYYY-MM-DD date string.
+ */
+const getYesterdayDate = (dateStr) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(Date.UTC(year, month - 1, day));
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+};
+exports.getYesterdayDate = getYesterdayDate;
+const normalizeDateString = (date) => {
+    if (!date)
+        return null;
+    if (date instanceof Date) {
+        return date.toISOString().slice(0, 10);
+    }
+    return String(date).slice(0, 10);
+};
+exports.normalizeDateString = normalizeDateString;
+/**
+ * Calculates the resulting level and carry-over XP after gaining XP.
+ */
+const calculateLevelAndCarryOverXp = (currentLevel, currentXp, xpEarned) => {
+    if (!Number.isInteger(currentLevel) || currentLevel < 1) {
+        throw new Error('Current level must be a positive integer');
+    }
+    if (!Number.isFinite(currentXp) || currentXp < 0) {
+        throw new Error('Current XP must be a non-negative number');
+    }
+    if (!Number.isFinite(xpEarned) || xpEarned < 0) {
+        throw new Error('XP earned must be a non-negative number');
+    }
+    let level = currentLevel;
+    let xp = currentXp + xpEarned;
+    while (xp >= (0, exports.xpRequiredForLevel)(level)) {
+        xp -= (0, exports.xpRequiredForLevel)(level);
+        level += 1;
+    }
+    return {
+        level,
+        currentXp: xp,
+        leveledUp: level > currentLevel,
+    };
+};
+exports.calculateLevelAndCarryOverXp = calculateLevelAndCarryOverXp;
+/**
+ * Calculates the updated streak based on last completion date and current date in user timezone.
+ */
+const calculateStreak = (lastCompletionDate, currentStreak, longestStreak, today) => {
+    const normalizedLast = (0, exports.normalizeDateString)(lastCompletionDate);
+    const yesterday = (0, exports.getYesterdayDate)(today);
+    let newStreak = currentStreak;
+    let isNewDayCompletion = false;
+    if (!normalizedLast) {
+        newStreak = 1;
+        isNewDayCompletion = true;
+    }
+    else if (normalizedLast === today) {
+        newStreak = Math.max(1, currentStreak);
+        isNewDayCompletion = false;
+    }
+    else if (normalizedLast === yesterday) {
+        newStreak = currentStreak + 1;
+        isNewDayCompletion = true;
+    }
+    else {
+        // Streak broken because last completion was before yesterday
+        newStreak = 1;
+        isNewDayCompletion = true;
+    }
+    const newLongestStreak = Math.max(longestStreak, newStreak);
+    return {
+        currentStreak: newStreak,
+        longestStreak: newLongestStreak,
+        lastCompletionDate: today,
+        isNewDayCompletion,
+    };
+};
+exports.calculateStreak = calculateStreak;

@@ -5,6 +5,8 @@ import {
   xpRequiredForLevel,
   calculateLevelFromXp,
   getXpProgress,
+  calculateLevelAndCarryOverXp,
+  calculateStreak,
 } from '../src/services/gamification.service';
 
 describe('Gamification Service', () => {
@@ -81,6 +83,102 @@ describe('Gamification Service', () => {
         currentXp: 150,
         requiredXp: 100,
         progressPercent: 100,
+      });
+    });
+  });
+
+  describe('calculateLevelAndCarryOverXp', () => {
+    it('increases current XP without leveling up when threshold is not reached', () => {
+      const result = calculateLevelAndCarryOverXp(1, 20, 30);
+      expect(result).toEqual({
+        level: 1,
+        currentXp: 50,
+        leveledUp: false,
+      });
+    });
+
+    it('levels up with exact carry-over XP', () => {
+      // Level 1 requires 100 XP. 80 + 50 = 130 XP -> Level 2 with 30 XP remaining.
+      const result = calculateLevelAndCarryOverXp(1, 80, 50);
+      expect(result).toEqual({
+        level: 2,
+        currentXp: 30,
+        leveledUp: true,
+      });
+    });
+
+    it('levels up to next level with 0 carry-over when exact XP matches', () => {
+      const result = calculateLevelAndCarryOverXp(1, 0, 100);
+      expect(result).toEqual({
+        level: 2,
+        currentXp: 0,
+        leveledUp: true,
+      });
+    });
+
+    it('handles multiple level-ups with carry-over XP correctly', () => {
+      // Lv 1 requires 100, Lv 2 requires 282 (total 382 to reach Lv 3).
+      // If player earns 400 XP at Lv 1 with 0 XP:
+      // Lv 1 -> Lv 2 (300 remaining) -> Lv 3 (300 - 282 = 18 remaining).
+      const result = calculateLevelAndCarryOverXp(1, 0, 400);
+      expect(result).toEqual({
+        level: 3,
+        currentXp: 18,
+        leveledUp: true,
+      });
+    });
+  });
+
+  describe('calculateStreak', () => {
+    const today = '2026-09-13';
+
+    it('starts streak at 1 on first quest completion ever', () => {
+      const result = calculateStreak(null, 0, 0, today);
+      expect(result).toEqual({
+        currentStreak: 1,
+        longestStreak: 1,
+        lastCompletionDate: today,
+        isNewDayCompletion: true,
+      });
+    });
+
+    it('increments streak when completed on consecutive day (yesterday)', () => {
+      const result = calculateStreak('2026-09-12', 4, 10, today);
+      expect(result).toEqual({
+        currentStreak: 5,
+        longestStreak: 10,
+        lastCompletionDate: today,
+        isNewDayCompletion: true,
+      });
+    });
+
+    it('updates longest streak when current exceeds it', () => {
+      const result = calculateStreak('2026-09-12', 10, 10, today);
+      expect(result).toEqual({
+        currentStreak: 11,
+        longestStreak: 11,
+        lastCompletionDate: today,
+        isNewDayCompletion: true,
+      });
+    });
+
+    it('does not increment streak on multiple completions same day', () => {
+      const result = calculateStreak(today, 3, 5, today);
+      expect(result).toEqual({
+        currentStreak: 3,
+        longestStreak: 5,
+        lastCompletionDate: today,
+        isNewDayCompletion: false,
+      });
+    });
+
+    it('resets streak to 1 when a day was missed (more than 1 day ago)', () => {
+      const result = calculateStreak('2026-09-10', 8, 15, today);
+      expect(result).toEqual({
+        currentStreak: 1,
+        longestStreak: 15,
+        lastCompletionDate: today,
+        isNewDayCompletion: true,
       });
     });
   });
